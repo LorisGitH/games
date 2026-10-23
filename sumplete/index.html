@@ -400,15 +400,21 @@
   function update() {
     const { n } = G;
     const rs = new Array(n).fill(0), cs = new Array(n).fill(0);
+    const rOpen = new Array(n).fill(0), cOpen = new Array(n).fill(0); // cells not yet removed or validated
     for (let i = 0; i < n * n; i++) {
       const r = (i / n) | 0, c = i % n, st = G.cells[i];
       els.cells[i].className = 'cell ' + STATE_CLASS[st];
       if (st !== REMOVED) { rs[r] += G.vals[r][c]; cs[c] += G.vals[r][c]; }
+      if (st === NORMAL) { rOpen[r]++; cOpen[c]++; }
     }
-    const mark = (el, sum, target) => {
-      el.className = 'target' + (sum === target ? ' ok' : '');
+    // a line only turns green once every one of its cells is decided and the sum is right
+    const mark = (el, sum, target, open) => {
+      el.className = 'target' + (open === 0 && sum === target ? ' ok' : '');
     };
-    for (let k = 0; k < n; k++) { mark(els.rowT[k], rs[k], G.rowT[k]); mark(els.colT[k], cs[k], G.colT[k]); }
+    for (let k = 0; k < n; k++) {
+      mark(els.rowT[k], rs[k], G.rowT[k], rOpen[k]);
+      mark(els.colT[k], cs[k], G.colT[k], cOpen[k]);
+    }
 
     undoBtn.disabled = !playing() || !G.history.length;
     renderTimer();
