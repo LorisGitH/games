@@ -72,6 +72,21 @@
   #lives .lost { color: var(--surface-edge); }
   #lives .hit { animation: beat .5s; }
   @keyframes beat { 30% { transform: scale(1.5); } }
+  #easy {
+    display: flex; align-items: center; gap: 8px; padding: 4px 2px;
+    border: 0; background: none; font: inherit; font-size: 14px; color: var(--muted);
+  }
+  #easy .sw {
+    position: relative; width: 40px; height: 24px; border-radius: 12px;
+    background: var(--surface-edge); transition: background .2s;
+  }
+  #easy .sw i {
+    position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .2s;
+  }
+  #easy[aria-checked="true"] { color: var(--text); }
+  #easy[aria-checked="true"] .sw { background: var(--locked); }
+  #easy[aria-checked="true"] .sw i { transform: translateX(16px); }
   #completed { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
 
 
@@ -117,6 +132,7 @@
     font-size: clamp(14px, 4.6vw, 20px); font-weight: 700; color: var(--muted);
     transition: color .15s, background .15s;
   }
+  .target.adj { color: var(--locked); }
   .target.ok { color: var(--ok); background: var(--ok-bg); }
 
   #hint { text-align: center; color: var(--muted); font-size: 14px; line-height: 1.45; margin: 2px 0 0; }
@@ -162,6 +178,9 @@
 
   <div id="stats">
     <span id="lives" aria-label="Vies"></span>
+    <button id="easy" role="switch" aria-checked="false">
+      <span class="sw"><i></i></span><span>Plus simple</span>
+    </button>
     <span id="completed"></span>
   </div>
 
@@ -203,6 +222,7 @@
   const undoBtn = $('#undo');
   const livesEl = $('#lives');
   const completedEl = $('#completed');
+  const easyBtn = $('#easy');
   const MAX_LIVES = 3;
   const MIN_SIZE = 5, MAX_SIZE = 8;
 
@@ -401,20 +421,26 @@
     const { n } = G;
     const rs = new Array(n).fill(0), cs = new Array(n).fill(0);
     const rOpen = new Array(n).fill(0), cOpen = new Array(n).fill(0); // cells not yet removed or validated
+    const rLock = new Array(n).fill(0), cLock = new Array(n).fill(0); // sum of validated cells
     for (let i = 0; i < n * n; i++) {
       const r = (i / n) | 0, c = i % n, st = G.cells[i];
       els.cells[i].className = 'cell ' + STATE_CLASS[st];
       if (st !== REMOVED) { rs[r] += G.vals[r][c]; cs[c] += G.vals[r][c]; }
       if (st === NORMAL) { rOpen[r]++; cOpen[c]++; }
+      if (st === LOCKED) { rLock[r] += G.vals[r][c]; cLock[c] += G.vals[r][c]; }
     }
     // a line only turns green once every one of its cells is decided and the sum is right
-    const mark = (el, sum, target, open) => {
-      el.className = 'target' + (open === 0 && sum === target ? ' ok' : '');
+    // "plus simple": validated cells are subtracted from the displayed target
+    const easy = !!store.easy;
+    const mark = (el, sum, target, open, locked) => {
+      el.textContent = easy ? target - locked : target;
+      el.className = 'target' + (open === 0 && sum === target ? ' ok' : easy && locked ? ' adj' : '');
     };
     for (let k = 0; k < n; k++) {
-      mark(els.rowT[k], rs[k], G.rowT[k], rOpen[k]);
-      mark(els.colT[k], cs[k], G.colT[k], cOpen[k]);
+      mark(els.rowT[k], rs[k], G.rowT[k], rOpen[k], rLock[k]);
+      mark(els.colT[k], cs[k], G.colT[k], cOpen[k], cLock[k]);
     }
+    easyBtn.setAttribute('aria-checked', String(easy));
 
     undoBtn.disabled = !playing() || !G.history.length;
     renderTimer();
@@ -507,6 +533,7 @@
   /* ---------- controls ---------- */
 
   undoBtn.addEventListener('click', undo);
+  easyBtn.addEventListener('click', () => { store.easy = !store.easy; update(); save(); });
   $('#retry').addEventListener('click', retry);
   $('#win-next').addEventListener('click', () => newGame(randomSize()));
 
