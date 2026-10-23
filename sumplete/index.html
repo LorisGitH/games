@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)">
+<title>Sumplete</title>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --surface: #ffffff;
+    --surface-edge: #e3ded2;
+    --text: #23262d;
+    --muted: #8a8678;
+    --locked: #3b6fd8;
+    --locked-text: #ffffff;
+    --ok: #2f9e5b;
+    --ok-bg: #dff3e6;
+    --overlay: rgba(244, 241, 234, .88);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --surface: #252932;
+      --surface-edge: #343946;
+      --text: #eceae4;
+      --muted: #8b8f9c;
+      --locked: #5a8cf0;
+      --locked-text: #0f1218;
+      --ok: #4cc27c;
+      --ok-bg: #1d3a2a;
+      --overlay: rgba(22, 24, 29, .88);
+    }
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+
+  main { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+
+  header { display: flex; align-items: center; justify-content: space-between; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -.02em; }
+  #timer { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 17px; }
+
+  #sizes { display: flex; gap: 6px; }
+  #sizes button {
+    flex: 1; padding: 9px 0; font: inherit; font-weight: 600; font-size: 15px;
+    border: 1px solid var(--surface-edge); border-radius: 10px;
+    background: var(--surface); color: var(--muted);
+  }
+  #sizes button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  #grid {
+    --gap: 5px;
+    display: grid;
+    grid-template-columns: repeat(calc(var(--n) + 1), 1fr);
+    gap: var(--gap);
+    width: min(100%, calc(76px * (var(--n) + 1)));
+    margin: 4px auto 0;
+  }
+  #grid > div {
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-variant-numeric: tabular-nums;
+    border-radius: 12px;
+  }
+
+  .cell {
+    position: relative; overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--surface-edge);
+    font-size: clamp(18px, 6.2vw, 30px); font-weight: 650;
+    cursor: pointer;
+    transition: transform .08s, opacity .15s, background .15s;
+  }
+  .cell:active { transform: scale(.94); }
+  .cell.removed { background: transparent; border-style: dashed; color: var(--muted); opacity: .38; }
+  .cell.removed span { text-decoration: line-through; text-decoration-thickness: 2px; }
+  .cell.locked { background: var(--locked); border-color: var(--locked); color: var(--locked-text); }
+  .cell.locked::before {
+    content: ""; position: absolute; top: 6px; right: 6px;
+    width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .7;
+  }
+  .cell.pressing::after {
+    content: ""; position: absolute; inset: 0;
+    background: var(--locked); opacity: .35;
+    transform-origin: bottom; animation: fill var(--long, 420ms) linear forwards;
+  }
+  @keyframes fill { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+  .target {
+    font-size: clamp(14px, 4.6vw, 20px); font-weight: 700; color: var(--muted);
+    transition: color .15s, background .15s;
+  }
+  .target.ok { color: var(--ok); background: var(--ok-bg); }
+
+  #hint { text-align: center; color: var(--muted); font-size: 14px; line-height: 1.45; margin: 2px 0 0; }
+  #hint b { color: var(--text); font-weight: 600; }
+
+  #actions { display: flex; gap: 8px; margin-top: auto; }
+  #actions button {
+    flex: 1; padding: 14px 0; font: inherit; font-weight: 600; font-size: 15px;
+    border: 1px solid var(--surface-edge); border-radius: 12px;
+    background: var(--surface); color: var(--text);
+  }
+  #actions button:active { transform: scale(.97); }
+  #actions button:disabled { opacity: .4; }
+  #actions #new { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  #win {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 6px;
+    background: var(--overlay); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    text-align: center;
+  }
+  #win.show { display: flex; }
+  #win h2 { font-size: 40px; margin: 0; letter-spacing: -.03em; }
+  #win p { margin: 0; color: var(--muted); font-size: 17px; }
+  #win button {
+    margin-top: 18px; padding: 14px 32px; font: inherit; font-weight: 600; font-size: 16px;
+    border: 0; border-radius: 12px; background: var(--text); color: var(--bg);
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Sumplete</h1>
+    <span id="timer">0:00</span>
+  </header>
+
+  <div id="sizes" role="group" aria-label="Taille de la grille">
+    <button data-n="4">4×4</button>
+    <button data-n="5">5×5</button>
+    <button data-n="6">6×6</button>
+    <button data-n="7">7×7</button>
+  </div>
+
+  <div id="grid"></div>
+
+  <p id="hint"><b>Toucher</b> : supprimer un chiffre &nbsp;·&nbsp; <b>Appui long</b> : le valider</p>
+
+  <div id="actions">
+    <button id="undo">Annuler</button>
+    <button id="reset">Recommencer</button>
+    <button id="new">Nouvelle</button>
+  </div>
+</main>
+
+<div id="win">
+  <h2>Bravo !</h2>
+  <p id="win-time"></p>
+  <button id="win-new">Nouvelle grille</button>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const LONG_MS = 420;
+  const MOVE_TOLERANCE = 10;
+  const STORE = 'sumplete:v1';
+  const NORMAL = 0, REMOVED = 1, LOCKED = 2;
+  const STATE_CLASS = ['', 'removed', 'locked'];
+
+  const $ = s => document.querySelector(s);
+  const gridEl = $('#grid');
+  const timerEl = $('#timer');
+  const undoBtn = $('#undo');
+
+  let G;               // current game
+  let els;             // DOM refs of the current grid
+  let store = load();  // { n, best: {n: ms}, game }
+  let lastTick = 0;
+
+  /* ---------- storage ---------- */
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch { return {}; }
+  }
+  function save() {
+    try {
+      store.game = G && !G.won ? {
+        n: G.n, vals: G.vals, rowT: G.rowT, colT: G.colT,
+        cells: G.cells, history: G.history, elapsed: G.elapsed,
+      } : null;
+      localStorage.setItem(STORE, JSON.stringify(store));
+    } catch { /* storage unavailable: play without persistence */ }
+  }
+
+  /* ---------- puzzle generation ---------- */
+
+  const rnd = k => Math.floor(Math.random() * k);
+
+  // Counts solutions (stops at `limit`) by choosing, for each row, a subset of
+  // cells that matches its target and fits within what the columns still need.
+  function countSolutions(vals, rowT, colT, limit) {
+    const n = vals.length;
+    const cand = [];
+    for (let r = 0; r < n; r++) {
+      const list = [];
+      for (let m = 1; m < (1 << n); m++) {
+        let s = 0;
+        for (let c = 0; c < n; c++) if (m >> c & 1) s += vals[r][c];
+        if (s === rowT[r]) list.push(m);
+      }
+      cand.push(list);
+    }
+    const suffix = Array.from({ length: n + 1 }, () => new Array(n).fill(0));
+    for (let r = n - 1; r >= 0; r--)
+      for (let c = 0; c < n; c++) suffix[r][c] = suffix[r + 1][c] + vals[r][c];
+
+    const rem = colT.slice();
+    let count = 0;
+    (function dfs(r) {
+      if (count >= limit) return;
+      if (r === n) { if (rem.every(x => x === 0)) count++; return; }
+      for (const m of cand[r]) {
+        let ok = true;
+        for (let c = 0; c < n; c++) if ((m >> c & 1) && rem[c] < vals[r][c]) { ok = false; break; }
+        if (!ok) continue;
+        for (let c = 0; c < n; c++) if (m >> c & 1) rem[c] -= vals[r][c];
+        for (let c = 0; c < n && ok; c++) if (rem[c] > suffix[r + 1][c]) ok = false;
+        if (ok) dfs(r + 1);
+        for (let c = 0; c < n; c++) if (m >> c & 1) rem[c] += vals[r][c];
+      }
+    })(0);
+    return count;
+  }
+
+  function randomPuzzle(n) {
+    const vals = Array.from({ length: n }, () => Array.from({ length: n }, () => 1 + rnd(9)));
+    let keep;
+    do {
+      keep = Array.from({ length: n }, () => Array.from({ length: n }, () => Math.random() < 0.55));
+    } while (
+      !keep.every(row => row.some(Boolean)) ||
+      !Array.from({ length: n }, (_, c) => keep.some(row => row[c])).every(Boolean)
+    );
+    const rowT = vals.map((row, r) => row.reduce((s, v, c) => s + (keep[r][c] ? v : 0), 0));
+    const colT = Array.from({ length: n }, (_, c) =>
+      vals.reduce((s, row, r) => s + (keep[r][c] ? row[c] : 0), 0));
+    return { n, vals, rowT, colT };
+  }
+
+  // Prefers grids with a single solution; falls back to any solvable grid.
+  function generate(n) {
+    let p;
+    for (let i = 0; i < 400; i++) {
+      p = randomPuzzle(n);
+      if (countSolutions(p.vals, p.rowT, p.colT, 2) === 1) break;
+    }
+    return p;
+  }
+
+  /* ---------- game state ---------- */
+
+  function newGame(n) {
+    const p = generate(n);
+    G = { ...p, cells: new Array(n * n).fill(NORMAL), history: [], elapsed: 0, won: false };
+    store.n = n;
+    start();
+  }
+
+  function restore(g) {
+    G = { ...g, won: false };
+    start();
+  }
+
+  function start() {
+    build();
+    update();
+    $('#win').classList.remove('show');
+    document.querySelectorAll('#sizes button').forEach(b =>
+      b.setAttribute('aria-pressed', String(+b.dataset.n === G.n)));
+    save();
+  }
+
+  function setCell(i, state) {
+    if (G.cells[i] === state) return;
+    G.history.push([i, G.cells[i]]);
+    G.cells[i] = state;
+    update();
+    save();
+  }
+
+  function tap(i) {
+    if (G.won) return;
+    const s = G.cells[i];
+    if (s === LOCKED) return;
+    setCell(i, s === REMOVED ? NORMAL : REMOVED);
+  }
+
+  function longPress(i) {
+    if (G.won) return;
+    setCell(i, G.cells[i] === LOCKED ? NORMAL : LOCKED);
+  }
+
+  function undo() {
+    if (G.won || !G.history.length) return;
+    const [i, prev] = G.history.pop();
+    G.cells[i] = prev;
+    update();
+    save();
+  }
+
+  function reset() {
+    G.cells.fill(NORMAL);
+    G.history = [];
+    G.elapsed = 0;
+    update();
+    save();
+  }
+
+  /* ---------- rendering ---------- */
+
+  function build() {
+    const { n } = G;
+    gridEl.style.setProperty('--n', n);
+    gridEl.replaceChildren();
+    els = { cells: [], rowT: [], colT: [] };
+
+    gridEl.append(document.createElement('div')); // top-left corner
+    for (let c = 0; c < n; c++) {
+      const d = document.createElement('div');
+      d.className = 'target';
+      d.textContent = G.colT[c];
+      els.colT.push(d);
+      gridEl.append(d);
+    }
+    for (let r = 0; r < n; r++) {
+      const t = document.createElement('div');
+      t.className = 'target';
+      t.textContent = G.rowT[r];
+      els.rowT.push(t);
+      gridEl.append(t);
+      for (let c = 0; c < n; c++) {
+        const d = document.createElement('div');
+        d.className = 'cell';
+        d.dataset.i = r * n + c;
+        d.innerHTML = '<span></span>';
+        d.firstChild.textContent = G.vals[r][c];
+        els.cells.push(d);
+        gridEl.append(d);
+      }
+    }
+  }
+
+  function update() {
+    const { n } = G;
+    const rs = new Array(n).fill(0), cs = new Array(n).fill(0);
+    for (let i = 0; i < n * n; i++) {
+      const r = (i / n) | 0, c = i % n, st = G.cells[i];
+      els.cells[i].className = 'cell ' + STATE_CLASS[st];
+      if (st !== REMOVED) { rs[r] += G.vals[r][c]; cs[c] += G.vals[r][c]; }
+    }
+    const mark = (el, sum, target) => {
+      el.className = 'target' + (sum === target ? ' ok' : '');
+    };
+    for (let k = 0; k < n; k++) { mark(els.rowT[k], rs[k], G.rowT[k]); mark(els.colT[k], cs[k], G.colT[k]); }
+
+    undoBtn.disabled = !G.history.length;
+    renderTimer();
+
+    const solved = rs.every((s, k) => s === G.rowT[k]) && cs.every((s, k) => s === G.colT[k]);
+    if (solved && !G.won) win();
+  }
+
+  function fmt(ms) {
+    const s = Math.floor(ms / 1000);
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+  function renderTimer() { timerEl.textContent = fmt(G.elapsed); }
+
+  function win() {
+    G.won = true;
+    store.best = store.best || {};
+    const prev = store.best[G.n];
+    const record = !prev || G.elapsed < prev;
+    if (record) store.best[G.n] = G.elapsed;
+    $('#win-time').textContent = 'Résolu en ' + fmt(G.elapsed) +
+      (record ? ' · nouveau record !' : ' · record ' + fmt(prev));
+    $('#win').classList.add('show');
+    navigator.vibrate?.([20, 40, 20]);
+    save();
+  }
+
+  /* ---------- input: tap = remove, long press = validate ---------- */
+
+  let press = null;
+
+  function endPress() {
+    if (!press) return;
+    clearTimeout(press.timer);
+    press.el.classList.remove('pressing');
+    press = null;
+  }
+
+  gridEl.addEventListener('pointerdown', e => {
+    const el = e.target.closest('.cell');
+    if (!el || G.won || press) return;
+    const i = +el.dataset.i;
+    press = { el, i, x: e.clientX, y: e.clientY, long: false, moved: false };
+    el.style.setProperty('--long', LONG_MS + 'ms');
+    if (G.cells[i] !== REMOVED) el.classList.add('pressing');
+    press.timer = setTimeout(() => {
+      press.long = true;
+      el.classList.remove('pressing');
+      navigator.vibrate?.(15);
+      longPress(i);
+    }, LONG_MS);
+  });
+
+  gridEl.addEventListener('pointermove', e => {
+    if (!press || press.moved) return;
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > MOVE_TOLERANCE) {
+      press.moved = true;
+      clearTimeout(press.timer);
+      press.el.classList.remove('pressing');
+    }
+  });
+
+  const release = e => {
+    if (!press) return;
+    if (e.type === 'pointerup' && !press.long && !press.moved) tap(press.i);
+    endPress();
+  };
+  window.addEventListener('pointerup', release);
+  window.addEventListener('pointercancel', release);
+  gridEl.addEventListener('contextmenu', e => e.preventDefault());
+
+  /* ---------- controls ---------- */
+
+  undoBtn.addEventListener('click', undo);
+  $('#reset').addEventListener('click', reset);
+  $('#new').addEventListener('click', () => newGame(G.n));
+  $('#win-new').addEventListener('click', () => newGame(G.n));
+  $('#sizes').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (b && +b.dataset.n !== G.n) newGame(+b.dataset.n);
+  });
+
+  // timer runs once the player has made a move, and only while the page is visible
+  setInterval(() => {
+    const now = performance.now();
+    if (G && !G.won && G.history.length && !document.hidden) {
+      G.elapsed += now - lastTick;
+      renderTimer();
+    }
+    lastTick = now;
+  }, 250);
+  document.addEventListener('visibilitychange', () => { if (G && !document.hidden) lastTick = performance.now(); save(); });
+
+  /* ---------- boot ---------- */
+
+  lastTick = performance.now();
+  const g = store.game;
+  if (g && g.vals && g.cells && g.cells.length === g.n * g.n) restore(g);
+  else newGame(store.n || 5);
+})();
+</script>
+</body>
+</html>
