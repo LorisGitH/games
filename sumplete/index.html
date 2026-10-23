@@ -23,6 +23,7 @@
     --locked-text: #ffffff;
     --ok: #2f9e5b;
     --ok-bg: #dff3e6;
+    --heart: #e04a5a;
     --overlay: rgba(244, 241, 234, .88);
   }
   @media (prefers-color-scheme: dark) {
@@ -36,6 +37,7 @@
       --locked-text: #0f1218;
       --ok: #4cc27c;
       --ok-bg: #1d3a2a;
+      --heart: #ef6b78;
       --overlay: rgba(22, 24, 29, .88);
     }
   }
@@ -65,7 +67,14 @@
   h1 { font-size: 22px; margin: 0; letter-spacing: -.02em; }
   #timer { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 17px; }
 
-  #sizes { display: flex; gap: 6px; }
+  #stats { display: flex; align-items: center; justify-content: space-between; margin-top: -4px; }
+  #lives { display: flex; gap: 6px; font-size: 24px; line-height: 1; color: var(--heart); }
+  #lives .lost { color: var(--surface-edge); }
+  #lives .hit { animation: beat .5s; }
+  @keyframes beat { 30% { transform: scale(1.5); } }
+  #completed { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
+
+  #sizes { display: flex; gap: 6px; margin-top: 16px; width: min(280px, 80vw); }
   #sizes button {
     flex: 1; padding: 9px 0; font: inherit; font-weight: 600; font-size: 15px;
     border: 1px solid var(--surface-edge); border-radius: 10px;
@@ -128,18 +137,24 @@
   }
   #actions button:active { transform: scale(.97); }
   #actions button:disabled { opacity: .4; }
-  #actions #new { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .cell.wrong { animation: shake .4s; border-color: var(--heart); }
+  @keyframes shake {
+    20% { transform: translateX(-5px); background: var(--heart); }
+    40% { transform: translateX(5px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(3px); }
+  }
 
-  #win {
+  .overlay {
     position: fixed; inset: 0; display: none;
     align-items: center; justify-content: center; flex-direction: column; gap: 6px;
     background: var(--overlay); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     text-align: center;
   }
-  #win.show { display: flex; }
-  #win h2 { font-size: 40px; margin: 0; letter-spacing: -.03em; }
-  #win p { margin: 0; color: var(--muted); font-size: 17px; }
-  #win button {
+  .overlay.show { display: flex; }
+  .overlay h2 { font-size: 40px; margin: 0; letter-spacing: -.03em; }
+  .overlay p { margin: 0; color: var(--muted); font-size: 17px; }
+  .overlay > button {
     margin-top: 18px; padding: 14px 32px; font: inherit; font-weight: 600; font-size: 16px;
     border: 0; border-radius: 12px; background: var(--text); color: var(--bg);
   }
@@ -152,11 +167,9 @@
     <span id="timer">0:00</span>
   </header>
 
-  <div id="sizes" role="group" aria-label="Taille de la grille">
-    <button data-n="4">4×4</button>
-    <button data-n="5">5×5</button>
-    <button data-n="6">6×6</button>
-    <button data-n="7">7×7</button>
+  <div id="stats">
+    <span id="lives" aria-label="Vies"></span>
+    <span id="completed"></span>
   </div>
 
   <div id="grid"></div>
@@ -165,15 +178,26 @@
 
   <div id="actions">
     <button id="undo">Annuler</button>
-    <button id="reset">Recommencer</button>
-    <button id="new">Nouvelle</button>
   </div>
 </main>
 
-<div id="win">
+<div id="win" class="overlay">
   <h2>Bravo !</h2>
   <p id="win-time"></p>
-  <button id="win-new">Nouvelle grille</button>
+  <p id="win-count"></p>
+  <div id="sizes" role="group" aria-label="Taille de la prochaine grille">
+    <button data-n="4">4×4</button>
+    <button data-n="5">5×5</button>
+    <button data-n="6">6×6</button>
+    <button data-n="7">7×7</button>
+  </div>
+  <button id="win-next">Grille suivante</button>
+</div>
+
+<div id="over" class="overlay">
+  <h2>Plus de vies</h2>
+  <p>On reprend la même grille.</p>
+  <button id="retry">Réessayer</button>
 </div>
 
 <script>
@@ -190,10 +214,14 @@
   const gridEl = $('#grid');
   const timerEl = $('#timer');
   const undoBtn = $('#undo');
+  const livesEl = $('#lives');
+  const completedEl = $('#completed');
+  const MAX_LIVES = 3;
 
   let G;               // current game
   let els;             // DOM refs of the current grid
-  let store = load();  // { n, best: {n: ms}, game }
+  let nextSize;        // size picked on the win screen
+  let store = load();  // { n, completed, best: {n: ms}, game }
   let lastTick = 0;
 
   /* ---------- storage ---------- */
@@ -204,8 +232,8 @@
   function save() {
     try {
       store.game = G && !G.won ? {
-        n: G.n, vals: G.vals, rowT: G.rowT, colT: G.colT,
-        cells: G.cells, history: G.history, elapsed: G.elapsed,
+        n: G.n, vals: G.vals, keep: G.keep, rowT: G.rowT, colT: G.colT,
+        cells: G.cells, history: G.history, elapsed: G.elapsed, lives: G.lives,
       } : null;
       localStorage.setItem(STORE, JSON.stringify(store));
     } catch { /* storage unavailable: play without persistence */ }
@@ -263,24 +291,22 @@
     const rowT = vals.map((row, r) => row.reduce((s, v, c) => s + (keep[r][c] ? v : 0), 0));
     const colT = Array.from({ length: n }, (_, c) =>
       vals.reduce((s, row, r) => s + (keep[r][c] ? row[c] : 0), 0));
-    return { n, vals, rowT, colT };
+    return { n, vals, keep: keep.flat(), rowT, colT };
   }
 
-  // Prefers grids with a single solution; falls back to any solvable grid.
+  // Only grids with a single solution, so a wrong move can be told from a right one.
   function generate(n) {
-    let p;
-    for (let i = 0; i < 400; i++) {
-      p = randomPuzzle(n);
-      if (countSolutions(p.vals, p.rowT, p.colT, 2) === 1) break;
+    for (;;) {
+      const p = randomPuzzle(n);
+      if (countSolutions(p.vals, p.rowT, p.colT, 2) === 1) return p;
     }
-    return p;
   }
 
   /* ---------- game state ---------- */
 
   function newGame(n) {
     const p = generate(n);
-    G = { ...p, cells: new Array(n * n).fill(NORMAL), history: [], elapsed: 0, won: false };
+    G = { ...p, cells: new Array(n * n).fill(NORMAL), history: [], elapsed: 0, lives: MAX_LIVES, won: false };
     store.n = n;
     start();
   }
@@ -294,10 +320,11 @@
     build();
     update();
     $('#win').classList.remove('show');
-    document.querySelectorAll('#sizes button').forEach(b =>
-      b.setAttribute('aria-pressed', String(+b.dataset.n === G.n)));
+    $('#over').classList.toggle('show', G.lives <= 0);
     save();
   }
+
+  const playing = () => !G.won && G.lives > 0;
 
   function setCell(i, state) {
     if (G.cells[i] === state) return;
@@ -307,32 +334,46 @@
     save();
   }
 
+  // A removal is wrong if the cell belongs to the solution; a validation is wrong if it doesn't.
+  function wrongMove(i) {
+    navigator.vibrate?.([40, 30, 40]);
+    G.lives--;
+    update();
+    els.cells[i].classList.add('wrong');
+    livesEl.children[G.lives]?.classList.add('hit');
+    if (G.lives <= 0) setTimeout(() => $('#over').classList.add('show'), 450);
+    save();
+  }
+
   function tap(i) {
-    if (G.won) return;
+    if (!playing()) return;
     const s = G.cells[i];
     if (s === LOCKED) return;
+    if (s === NORMAL && G.keep[i]) return wrongMove(i);
     setCell(i, s === REMOVED ? NORMAL : REMOVED);
   }
 
   function longPress(i) {
-    if (G.won) return;
+    if (!playing()) return;
+    if (G.cells[i] !== LOCKED && !G.keep[i]) return wrongMove(i);
     setCell(i, G.cells[i] === LOCKED ? NORMAL : LOCKED);
   }
 
   function undo() {
-    if (G.won || !G.history.length) return;
+    if (!playing() || !G.history.length) return;
     const [i, prev] = G.history.pop();
     G.cells[i] = prev;
     update();
     save();
   }
 
-  function reset() {
+  // same grid, fresh start
+  function retry() {
     G.cells.fill(NORMAL);
     G.history = [];
     G.elapsed = 0;
-    update();
-    save();
+    G.lives = MAX_LIVES;
+    start();
   }
 
   /* ---------- rendering ---------- */
@@ -382,11 +423,23 @@
     };
     for (let k = 0; k < n; k++) { mark(els.rowT[k], rs[k], G.rowT[k]); mark(els.colT[k], cs[k], G.colT[k]); }
 
-    undoBtn.disabled = !G.history.length;
+    undoBtn.disabled = !playing() || !G.history.length;
     renderTimer();
+    renderStats();
 
     const solved = rs.every((s, k) => s === G.rowT[k]) && cs.every((s, k) => s === G.colT[k]);
     if (solved && !G.won) win();
+  }
+
+  function renderStats() {
+    livesEl.replaceChildren(...Array.from({ length: MAX_LIVES }, (_, k) => {
+      const h = document.createElement('span');
+      h.textContent = '♥';
+      if (k >= G.lives) h.className = 'lost';
+      return h;
+    }));
+    const done = store.completed || 0;
+    completedEl.textContent = done + (done > 1 ? ' grilles réussies' : ' grille réussie');
   }
 
   function fmt(ms) {
@@ -397,12 +450,17 @@
 
   function win() {
     G.won = true;
+    store.completed = (store.completed || 0) + 1;
+    renderStats();
     store.best = store.best || {};
     const prev = store.best[G.n];
     const record = !prev || G.elapsed < prev;
     if (record) store.best[G.n] = G.elapsed;
     $('#win-time').textContent = 'Résolu en ' + fmt(G.elapsed) +
       (record ? ' · nouveau record !' : ' · record ' + fmt(prev));
+    $('#win-count').textContent = store.completed + (store.completed > 1 ? ' grilles réussies' : ' grille réussie');
+    nextSize = G.n;
+    markSize();
     $('#win').classList.add('show');
     navigator.vibrate?.([20, 40, 20]);
     save();
@@ -421,7 +479,7 @@
 
   gridEl.addEventListener('pointerdown', e => {
     const el = e.target.closest('.cell');
-    if (!el || G.won || press) return;
+    if (!el || !playing() || press) return;
     const i = +el.dataset.i;
     press = { el, i, x: e.clientX, y: e.clientY, long: false, moved: false };
     el.style.setProperty('--long', LONG_MS + 'ms');
@@ -458,18 +516,23 @@
   /* ---------- controls ---------- */
 
   undoBtn.addEventListener('click', undo);
-  $('#reset').addEventListener('click', reset);
-  $('#new').addEventListener('click', () => newGame(G.n));
-  $('#win-new').addEventListener('click', () => newGame(G.n));
+  $('#retry').addEventListener('click', retry);
+  $('#win-next').addEventListener('click', () => newGame(nextSize));
+
+  // the next grid's size can only be chosen once the current one is solved
+  function markSize() {
+    document.querySelectorAll('#sizes button').forEach(b =>
+      b.setAttribute('aria-pressed', String(+b.dataset.n === nextSize)));
+  }
   $('#sizes').addEventListener('click', e => {
     const b = e.target.closest('button');
-    if (b && +b.dataset.n !== G.n) newGame(+b.dataset.n);
+    if (b) { nextSize = +b.dataset.n; markSize(); }
   });
 
   // timer runs once the player has made a move, and only while the page is visible
   setInterval(() => {
     const now = performance.now();
-    if (G && !G.won && G.history.length && !document.hidden) {
+    if (G && playing() && (G.history.length || G.lives < MAX_LIVES) && !document.hidden) {
       G.elapsed += now - lastTick;
       renderTimer();
     }
@@ -481,7 +544,7 @@
 
   lastTick = performance.now();
   const g = store.game;
-  if (g && g.vals && g.cells && g.cells.length === g.n * g.n) restore(g);
+  if (g && g.vals && g.keep && g.cells && g.cells.length === g.n * g.n) restore(g);
   else newGame(store.n || 5);
 })();
 </script>

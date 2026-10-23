@@ -4,4 +4,4 @@ Petits jeux, en HTML/CSS/JS pur (un seul fichier par jeu, sans build). Pensés p
 
 | Jeu | Description |
 | --- | --- |
-| [Sumplete](sumplete/index.html) | Supprime des chiffres pour que chaque ligne et colonne atteigne sa somme. Toucher = supprimer, appui long = valider. |
+| [Sumplete](sumplete/index.html) | Supprime des chiffres pour que chaque ligne et colonne atteigne sa somme. Toucher = supprimer, appui long = valider. 3 vies : une erreur en coûte une. |
