@@ -74,13 +74,6 @@
   @keyframes beat { 30% { transform: scale(1.5); } }
   #completed { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
 
-  #sizes { display: flex; gap: 6px; margin-top: 16px; width: min(280px, 80vw); }
-  #sizes button {
-    flex: 1; padding: 9px 0; font: inherit; font-weight: 600; font-size: 15px;
-    border: 1px solid var(--surface-edge); border-radius: 10px;
-    background: var(--surface); color: var(--muted);
-  }
-  #sizes button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
 
   #grid {
     --gap: 5px;
@@ -185,12 +178,6 @@
   <h2>Bravo !</h2>
   <p id="win-time"></p>
   <p id="win-count"></p>
-  <div id="sizes" role="group" aria-label="Taille de la prochaine grille">
-    <button data-n="4">4×4</button>
-    <button data-n="5">5×5</button>
-    <button data-n="6">6×6</button>
-    <button data-n="7">7×7</button>
-  </div>
   <button id="win-next">Grille suivante</button>
 </div>
 
@@ -217,10 +204,10 @@
   const livesEl = $('#lives');
   const completedEl = $('#completed');
   const MAX_LIVES = 3;
+  const MIN_SIZE = 5, MAX_SIZE = 8;
 
   let G;               // current game
   let els;             // DOM refs of the current grid
-  let nextSize;        // size picked on the win screen
   let store = load();  // { n, completed, best: {n: ms}, game }
   let lastTick = 0;
 
@@ -242,6 +229,7 @@
   /* ---------- puzzle generation ---------- */
 
   const rnd = k => Math.floor(Math.random() * k);
+  const randomSize = () => MIN_SIZE + rnd(MAX_SIZE - MIN_SIZE + 1);
 
   // Counts solutions (stops at `limit`) by choosing, for each row, a subset of
   // cells that matches its target and fits within what the columns still need.
@@ -307,7 +295,6 @@
   function newGame(n) {
     const p = generate(n);
     G = { ...p, cells: new Array(n * n).fill(NORMAL), history: [], elapsed: 0, lives: MAX_LIVES, won: false };
-    store.n = n;
     start();
   }
 
@@ -459,8 +446,6 @@
     $('#win-time').textContent = 'Résolu en ' + fmt(G.elapsed) +
       (record ? ' · nouveau record !' : ' · record ' + fmt(prev));
     $('#win-count').textContent = store.completed + (store.completed > 1 ? ' grilles réussies' : ' grille réussie');
-    nextSize = G.n;
-    markSize();
     $('#win').classList.add('show');
     navigator.vibrate?.([20, 40, 20]);
     save();
@@ -517,17 +502,7 @@
 
   undoBtn.addEventListener('click', undo);
   $('#retry').addEventListener('click', retry);
-  $('#win-next').addEventListener('click', () => newGame(nextSize));
-
-  // the next grid's size can only be chosen once the current one is solved
-  function markSize() {
-    document.querySelectorAll('#sizes button').forEach(b =>
-      b.setAttribute('aria-pressed', String(+b.dataset.n === nextSize)));
-  }
-  $('#sizes').addEventListener('click', e => {
-    const b = e.target.closest('button');
-    if (b) { nextSize = +b.dataset.n; markSize(); }
-  });
+  $('#win-next').addEventListener('click', () => newGame(randomSize()));
 
   // timer runs once the player has made a move, and only while the page is visible
   setInterval(() => {
@@ -545,7 +520,7 @@
   lastTick = performance.now();
   const g = store.game;
   if (g && g.vals && g.keep && g.cells && g.cells.length === g.n * g.n) restore(g);
-  else newGame(store.n || 5);
+  else newGame(randomSize());
 })();
 </script>
 </body>
