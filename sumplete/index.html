@@ -145,7 +145,6 @@
     background: var(--surface); color: var(--text);
   }
   #actions button:active { transform: scale(.97); }
-  #actions button:disabled { opacity: .4; }
   .cell.wrong { animation: shake .4s; border-color: var(--heart); }
   @keyframes shake {
     20% { transform: translateX(-5px); background: var(--heart); }
@@ -163,6 +162,12 @@
   .overlay.show { display: flex; }
   .overlay h2 { font-size: 40px; margin: 0; letter-spacing: -.03em; }
   .overlay p { margin: 0; color: var(--muted); font-size: 17px; }
+  .overlay .btns { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; width: min(280px, 80vw); }
+  .overlay .btns button {
+    padding: 14px 32px; font: inherit; font-weight: 600; font-size: 16px;
+    border: 0; border-radius: 12px; background: var(--text); color: var(--bg);
+  }
+  .overlay .btns button.ghost { background: var(--surface); color: var(--text); border: 1px solid var(--surface-edge); }
   .overlay > button {
     margin-top: 18px; padding: 14px 32px; font: inherit; font-weight: 600; font-size: 16px;
     border: 0; border-radius: 12px; background: var(--text); color: var(--bg);
@@ -189,7 +194,7 @@
   <p id="hint"><b>Toucher</b> : supprimer un chiffre &nbsp;·&nbsp; <b>Appui long</b> : le valider</p>
 
   <div id="actions">
-    <button id="undo">Annuler</button>
+    <button id="restart">Nouvelle grille, série à 0</button>
   </div>
 </main>
 
@@ -198,6 +203,15 @@
   <p id="win-time"></p>
   <p id="win-count"></p>
   <button id="win-next">Grille suivante</button>
+</div>
+
+<div id="confirm" class="overlay">
+  <h2>Recommencer ?</h2>
+  <p id="confirm-text"></p>
+  <div class="btns">
+    <button id="confirm-yes">Recommencer</button>
+    <button id="confirm-no" class="ghost">Annuler</button>
+  </div>
 </div>
 
 <div id="over" class="overlay">
@@ -219,7 +233,6 @@
   const $ = s => document.querySelector(s);
   const gridEl = $('#grid');
   const timerEl = $('#timer');
-  const undoBtn = $('#undo');
   const livesEl = $('#lives');
   const completedEl = $('#completed');
   const easyBtn = $('#easy');
@@ -327,6 +340,7 @@
     build();
     update();
     $('#win').classList.remove('show');
+    $('#confirm').classList.remove('show');
     $('#over').classList.toggle('show', G.lives <= 0);
     save();
   }
@@ -364,14 +378,6 @@
     if (!playing()) return;
     if (G.cells[i] !== LOCKED && !G.keep[i]) return wrongMove(i);
     setCell(i, G.cells[i] === LOCKED ? NORMAL : LOCKED);
-  }
-
-  function undo() {
-    if (!playing() || !G.history.length) return;
-    const [i, prev] = G.history.pop();
-    G.cells[i] = prev;
-    update();
-    save();
   }
 
   // same grid, fresh start
@@ -442,7 +448,6 @@
     }
     easyBtn.setAttribute('aria-checked', String(easy));
 
-    undoBtn.disabled = !playing() || !G.history.length;
     renderTimer();
     renderStats();
 
@@ -532,9 +537,18 @@
 
   /* ---------- controls ---------- */
 
-  undoBtn.addEventListener('click', undo);
   easyBtn.addEventListener('click', () => { store.easy = !store.easy; update(); save(); });
   $('#retry').addEventListener('click', retry);
+
+  // starting over drops the streak of completed grids, so it asks first
+  $('#restart').addEventListener('click', () => {
+    const done = store.completed || 0;
+    $('#confirm-text').textContent = 'Nouvelle grille, et ta série de ' + done +
+      (done > 1 ? ' grilles' : ' grille') + ' repart à 0.';
+    $('#confirm').classList.add('show');
+  });
+  $('#confirm-no').addEventListener('click', () => $('#confirm').classList.remove('show'));
+  $('#confirm-yes').addEventListener('click', () => { store.completed = 0; newGame(randomSize()); });
   $('#win-next').addEventListener('click', () => newGame(randomSize()));
 
   // timer runs once the player has made a move, and only while the page is visible
